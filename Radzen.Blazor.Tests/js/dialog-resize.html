@@ -1,0 +1,75 @@
+<meta charset="utf-8">
+<title>RadzenDialog resize harness</title>
+<style>
+  body { margin: 0; font: 14px sans-serif; }
+  .rz-dialog-wrapper { position: fixed; inset: 0; }
+  .rz-dialog {
+    position: absolute; top: 40px; left: 40px;
+    background: #fff; border: 1px solid #999;
+    overflow: auto;
+    display: flex; flex-direction: column;
+  }
+  .rz-dialog-titlebar { padding: 8px; background: #ddd; cursor: move; }
+  .rz-dialog-content { padding: 8px; }
+  .rz-dialog-mask { position: fixed; inset: 0; background: rgba(0,0,0,.2); }
+</style>
+<script src="../../Radzen.Blazor/wwwroot/Radzen.Blazor.js"></script>
+<script>
+  // Records every RadzenDialog.OnResize / OnDrag that the real Radzen.Blazor.js sends
+  // back to .NET, standing in for the DotNetObjectReference<DialogContainer>.
+  window.__calls = [];
+  window.__resetCalls = () => { window.__calls.length = 0; };
+
+  function makeDotNetRef(name) {
+    return {
+      name,
+      invokeMethodAsync(method, a, b) {
+        window.__calls.push({ dialog: name, method, a, b });
+        return Promise.resolve();
+      },
+    };
+  }
+
+  // Mirrors the markup DialogContainer.razor renders, including the resize:both that
+  // the Style property emits for Options.Resizable.
+  window.__openDialog = function (name, { width, height, resizable = true, draggable = true }) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'rz-dialog-wrapper';
+    wrapper.id = 'wrapper-' + name;
+
+    const dialog = document.createElement('div');
+    dialog.className = 'rz-dialog rz-open';
+    dialog.id = 'dialog-' + name;
+    dialog.style.width = width;
+    if (height) dialog.style.height = height;
+    if (resizable) dialog.style.resize = 'both';
+
+    const titlebar = document.createElement('div');
+    titlebar.className = 'rz-dialog-titlebar';
+    titlebar.id = 'titlebar-' + name;
+    titlebar.textContent = name;
+
+    const content = document.createElement('div');
+    content.className = 'rz-dialog-content';
+    content.id = 'content-' + name;
+    content.textContent = 'body of ' + name;
+
+    dialog.append(titlebar, content);
+    wrapper.append(dialog);
+    document.body.append(wrapper);
+
+    const ref = makeDotNetRef(name);
+    window['__ref_' + name] = ref;
+    Radzen.openDialog({ resizable, draggable, closeDialogOnEsc: true, autoFocusFirstElement: false },
+                      makeDotNetRef('service'), ref);
+    return ref;
+  };
+
+  // RadzenDialog.Close only calls Radzen.closeDialog once the *last* dialog is gone.
+  window.__closeDialog = function (name) {
+    document.getElementById('wrapper-' + name).remove();
+    if (!document.querySelector('.rz-dialog-content')) {
+      Radzen.closeDialog();
+    }
+  };
+</script>

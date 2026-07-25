@@ -13,7 +13,11 @@
     <IsPackable>true</IsPackable>
     <PackageId>Radzen.Blazor</PackageId>
     <Product>Radzen.Blazor</Product>
-    <Version>11.1.5</Version>
+    <!-- Fork of 11.1.5. AssemblyVersion has to move as well: consumers cache-bust
+         Radzen.Blazor.js with typeof(Radzen.Colors).Assembly.GetName().Version. -->
+    <Version>11.1.5-harbor.1</Version>
+    <AssemblyVersion>11.1.5.1</AssemblyVersion>
+    <FileVersion>11.1.5.1</FileVersion>
     <Copyright>Radzen Ltd.</Copyright>
     <Authors>Radzen Ltd.</Authors>
     <Description>Radzen Blazor is the most sophisticated free UI component library for Blazor, featuring 110+ native components including DataGrid, Scheduler, Charts, and advanced theming with full support for Material Design and Fluent UI.</Description>
