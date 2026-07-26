@@ -2756,6 +2756,64 @@ window.Radzen = {
                 dialog.offsetWidth = dialogElement.offsetWidth;
                 dialog.offsetHeight = dialogElement.offsetHeight;
 
+                var userResizing = false;
+
+                var pushSize = function () {
+                    if (!dialog) return;
+                    if (dialog.offsetWidth == dialogElement.offsetWidth &&
+                        dialog.offsetHeight == dialogElement.offsetHeight) return;
+
+                    dialog.offsetWidth = dialogElement.offsetWidth;
+                    dialog.offsetHeight = dialogElement.offsetHeight;
+
+                    dialog.invokeMethodAsync(
+                        'RadzenDialog.OnResize',
+                        dialogElement.offsetWidth,
+                        dialogElement.offsetHeight
+                    ).catch(function () { });
+                };
+
+                var stopTracking = function () {
+                    document.removeEventListener('pointermove', onPointerMove, true);
+                    document.removeEventListener('pointerup', onPointerUp, true);
+                    document.removeEventListener('pointercancel', onPointerUp, true);
+                };
+
+                var onPointerMove = function (e) {
+                    // A press alone is not a resize: the dialog's own box shows through
+                    // wherever its children do not cover it, so an ordinary click can land on
+                    // the element too. Only movement with the button still held is the drag.
+                    // The moves of a native resize are not targeted at the dialog, which is
+                    // why these listeners sit on the document.
+                    if (e.buttons === 1) {
+                        userResizing = true;
+                        return;
+                    }
+
+                    onPointerUp();
+                };
+
+                var onPointerUp = function () {
+                    stopTracking();
+                    if (!userResizing) return;
+                    userResizing = false;
+                    // The last ResizeObserver callback of a drag can be delivered after
+                    // pointerup, so flush the final size instead of dropping it.
+                    pushSize();
+                };
+
+                var onPointerDown = function (e) {
+                    // The native "resize: both" handle hit-tests as the element carrying the
+                    // resize property, never as a descendant, so the gesture starts with a
+                    // primary-button pointerdown on the dialog element itself. Only then is
+                    // the pointer tracked, so an open dialog costs nothing per mouse move.
+                    if (e.button !== 0 || !e.isPrimary || e.target !== dialogElement) return;
+
+                    document.addEventListener('pointermove', onPointerMove, true);
+                    document.addEventListener('pointerup', onPointerUp, true);
+                    document.addEventListener('pointercancel', onPointerUp, true);
+                };
+
                 var dialogResize = function (e) {
                     if (!dialog) return;
 
@@ -2764,21 +2822,20 @@ window.Radzen = {
                         return;
                     }
 
-                    if (dialog.offsetWidth != e[0].target.offsetWidth || dialog.offsetHeight != e[0].target.offsetHeight) {
-
+                    if (!userResizing) {
+                        // Keep the baseline current so the next real drag is still seen as a change.
                         dialog.offsetWidth = e[0].target.offsetWidth;
                         dialog.offsetHeight = e[0].target.offsetHeight;
-
-                        dialog.invokeMethodAsync(
-                            'RadzenDialog.OnResize',
-                            e[0].target.offsetWidth,
-                            e[0].target.offsetHeight
-                        ).catch(function () { });
+                        return;
                     }
+
+                    pushSize();
                 };
 
                 var resizeObserver = new ResizeObserver(dialogResize);
                 resizeObserver.observe(dialogElement);
+
+                dialogElement.addEventListener('pointerdown', onPointerDown);
 
                 var resizer = {
                     disposed: false,
@@ -2786,6 +2843,8 @@ window.Radzen = {
                         if (this.disposed) return;
                         this.disposed = true;
                         resizeObserver.disconnect();
+                        dialogElement.removeEventListener('pointerdown', onPointerDown);
+                        stopTracking();
                         var index = Radzen.dialogResizers.indexOf(this);
                         if (index != -1) {
                             Radzen.dialogResizers.splice(index, 1);
