@@ -2756,6 +2756,44 @@ window.Radzen = {
                 dialog.offsetWidth = dialogElement.offsetWidth;
                 dialog.offsetHeight = dialogElement.offsetHeight;
 
+                // A ResizeObserver cannot tell "the user dragged the resize handle" from
+                // "the box changed size for some other reason" - content growth, a nested
+                // dialog opening, a plain reflow. Reporting the latter to OnResize pins an
+                // explicit width/height on the dialog which then wins over every CSS rule,
+                // so the dialog is stuck at that size for the rest of its life.
+                // The browser's native "resize: both" handle hit-tests as the element that
+                // carries the resize property rather than as any of its descendants, so a
+                // pointerdown whose target is the dialog itself is the gesture - and only
+                // while that gesture is in flight do size changes belong to the user.
+                var userResizing = false;
+
+                var pushSize = function () {
+                    if (!dialog) return;
+                    if (dialog.offsetWidth == dialogElement.offsetWidth &&
+                        dialog.offsetHeight == dialogElement.offsetHeight) return;
+
+                    dialog.offsetWidth = dialogElement.offsetWidth;
+                    dialog.offsetHeight = dialogElement.offsetHeight;
+
+                    dialog.invokeMethodAsync(
+                        'RadzenDialog.OnResize',
+                        dialogElement.offsetWidth,
+                        dialogElement.offsetHeight
+                    ).catch(function () { });
+                };
+
+                var onPointerDown = function (e) {
+                    userResizing = e.target === dialogElement;
+                };
+
+                var onPointerUp = function () {
+                    if (!userResizing) return;
+                    userResizing = false;
+                    // The last ResizeObserver callback of a drag can be delivered after
+                    // pointerup, so flush the final size instead of dropping it.
+                    pushSize();
+                };
+
                 var dialogResize = function (e) {
                     if (!dialog) return;
 
@@ -2766,21 +2804,23 @@ window.Radzen = {
                         return;
                     }
 
-                    if (dialog.offsetWidth != e[0].target.offsetWidth || dialog.offsetHeight != e[0].target.offsetHeight) {
-
+                    if (!userResizing) {
+                        // Keep the baseline current so the next real drag is still seen as
+                        // a change, but do not tell .NET about a size the user did not ask for.
                         dialog.offsetWidth = e[0].target.offsetWidth;
                         dialog.offsetHeight = e[0].target.offsetHeight;
-
-                        dialog.invokeMethodAsync(
-                            'RadzenDialog.OnResize',
-                            e[0].target.offsetWidth,
-                            e[0].target.offsetHeight
-                        ).catch(function () { });
+                        return;
                     }
+
+                    pushSize();
                 };
 
                 var resizeObserver = new ResizeObserver(dialogResize);
                 resizeObserver.observe(dialogElement);
+
+                dialogElement.addEventListener('pointerdown', onPointerDown);
+                document.addEventListener('pointerup', onPointerUp, true);
+                document.addEventListener('pointercancel', onPointerUp, true);
 
                 var resizer = {
                     disposed: false,
@@ -2788,6 +2828,9 @@ window.Radzen = {
                         if (this.disposed) return;
                         this.disposed = true;
                         resizeObserver.disconnect();
+                        dialogElement.removeEventListener('pointerdown', onPointerDown);
+                        document.removeEventListener('pointerup', onPointerUp, true);
+                        document.removeEventListener('pointercancel', onPointerUp, true);
                         var index = Radzen.dialogResizers.indexOf(this);
                         if (index != -1) {
                             Radzen.dialogResizers.splice(index, 1);
