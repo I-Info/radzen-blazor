@@ -1,0 +1,101 @@
+<meta charset="utf-8">
+<title>RadzenDialog resize harness (real Radzen.Blazor.js)</title>
+<style>
+  body { margin: 0; font: 14px sans-serif; }
+  .rz-dialog-wrapper { position: fixed; inset: 0; }
+  /* Matches themes/components/blazor/_dialog.scss .rz-dialog */
+  .rz-dialog {
+    box-sizing: border-box;
+    position: absolute; top: 40px; left: 40px;
+    display: flex; flex-direction: column;
+    min-width: 150px; min-height: 150px;
+    background: #fff; overflow: hidden;
+  }
+  .rz-dialog-titlebar { display: flex; padding: 8px; background: #ddd; cursor: move; }
+  /* flex: 0 1 auto is what leaves the bare band at the bottom */
+  .rz-dialog-content { flex: 0 1 auto; padding: 8px; overflow: auto; }
+</style>
+<script>
+  // Counts the document-level pointer listeners Radzen.Blazor.js holds, so a test can
+  // assert that merely having a dialog open costs nothing per mouse move.
+  window.__listeners = { pointermove: 0, pointerup: 0, pointercancel: 0 };
+  const __add = document.addEventListener.bind(document);
+  const __remove = document.removeEventListener.bind(document);
+  document.addEventListener = function (type, fn, opts) {
+    if (type in window.__listeners) window.__listeners[type]++;
+    return __add(type, fn, opts);
+  };
+  document.removeEventListener = function (type, fn, opts) {
+    if (type in window.__listeners) window.__listeners[type]--;
+    return __remove(type, fn, opts);
+  };
+</script>
+<script src="RADZEN_JS"></script>
+<script>
+  window.__calls = [];
+  window.__resetCalls = () => { window.__calls.length = 0; };
+
+  function makeDotNetRef(name) {
+    return {
+      name,
+      invokeMethodAsync(method, a, b) {
+        window.__calls.push({ dialog: name, method, a, b });
+        return Promise.resolve();
+      },
+    };
+  }
+
+  window.__openDialog = function (name, { width, height, resizable = true, draggable = true }) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'rz-dialog-wrapper';
+    wrapper.id = 'wrapper-' + name;
+
+    const dialog = document.createElement('div');
+    dialog.className = 'rz-dialog rz-open';
+    dialog.id = 'dialog-' + name;
+    dialog.style.width = width;
+    if (height) dialog.style.height = height;
+    if (resizable) dialog.style.resize = 'both';
+
+    const titlebar = document.createElement('div');
+    titlebar.className = 'rz-dialog-titlebar';
+    titlebar.id = 'titlebar-' + name;
+    titlebar.textContent = name;
+
+    const content = document.createElement('div');
+    content.className = 'rz-dialog-content';
+    content.id = 'content-' + name;
+    content.textContent = 'body of ' + name;
+
+    dialog.append(titlebar, content);
+    wrapper.append(dialog);
+    document.body.append(wrapper);
+
+    const ref = makeDotNetRef(name);
+    window['__ref_' + name] = ref;
+    Radzen.openDialog({ resizable, draggable, closeDialogOnEsc: true, autoFocusFirstElement: false },
+                      makeDotNetRef('service'), ref);
+    return ref;
+  };
+
+  window.__closeDialog = function (name) {
+    document.getElementById('wrapper-' + name).remove();
+    if (!document.querySelector('.rz-dialog-content')) {
+      Radzen.closeDialog();
+    }
+  };
+
+  window.__grow = function (name) {
+    document.getElementById('content-' + name).textContent =
+      'wrapping words that actually reflow and make the dialog taller '.repeat(8);
+  };
+  window.__band = function (name) {
+    const d = document.getElementById('dialog-' + name).getBoundingClientRect();
+    const c = document.getElementById('content-' + name).getBoundingClientRect();
+    return { x: d.left + d.width / 2, y: (c.bottom + d.bottom) / 2, band: d.bottom - c.bottom };
+  };
+  window.__box = function (name) {
+    const d = document.getElementById('dialog-' + name);
+    return { w: d.offsetWidth, h: d.offsetHeight };
+  };
+</script>
